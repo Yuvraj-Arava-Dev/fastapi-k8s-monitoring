@@ -15,3 +15,25 @@ This project demonstrates how to:
 ## 🏛️ Architecture & Flow
 
 <img width="472" height="263" alt="image" src="https://github.com/user-attachments/assets/b9ed70f8-41be-4f30-90ca-cb94658acbd9" />
+
+## 🛠️ Instructions to Execute the Project
+
+```bash
+# create a cluster with kind
+kind create cluster --config kind-config.yaml --name dev-cluster
+
+# build the docker image for the python fast api 
+docker build -t fastapi-app:latest ./app
+
+# load the docker image to kind
+kind load docker-image fastapi-app:latest --name dev-cluster
+
+# Deploy core namespace and FastAPI application
+kubectl apply -f k8s-deployment/
+
+# Deploy Prometheus and Grafana monitoring stack
+kubectl apply -f monitoring/
+
+# view all the currently running pods
+kubectl get pods -n monitoring-demo -w
+```
