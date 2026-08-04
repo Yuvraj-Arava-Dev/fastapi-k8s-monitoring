@@ -44,12 +44,14 @@ server:
   service:
     type: NodePort
     nodePort: 30090
-  extraArgs: []
+
 serverFiles:
   prometheus.yml:
     global:
       scrape_interval: 15s
+
     rule_files: []
+
     scrape_configs:
       - job_name: fastapi
         metrics_path: /metrics
