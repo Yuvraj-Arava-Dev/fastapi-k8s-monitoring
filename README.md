@@ -1,20 +1,20 @@
-# 🚀 FastAPI Kubernetes Deployment with Prometheus & Grafana Monitoring
+# 🚀 FastAPI Kubernetes Deployment with Helm-based Prometheus & Grafana
 
-A production-ready blueprint for deploying a 3-endpoint **FastAPI** application to a local **`kind`** (Kubernetes in Docker) cluster. This repository includes auto-provisioned **Prometheus** for metrics collection and alerting, along with **Grafana** for real-time dashboard visualization.
+A production-ready blueprint for deploying a 3-endpoint **FastAPI** application to a local **`kind`** (Kubernetes in Docker) cluster. This repository now uses **Helm** to install **Prometheus** and **Grafana** instead of static monitoring YAML manifests.
 
 ## 🔍 Overview
 
 This project demonstrates how to:
 1. Containerize a FastAPI application with built-in Prometheus metric instrumentation.
-2. Spin up a multi-port local Kubernetes cluster using **`kind`**.
-3. Deploy the application using Kubernetes `Deployment` and `Service` (NodePort) manifests.
-4. Set up **Prometheus** to scrape application metrics (`/metrics`) automatically using internal K8s DNS.
-5. Configure **Prometheus Alert Rules** for high latency and 5xx error rates.
-6. Auto-provision **Grafana** with a pre-configured dashboard displaying Requests Per Second (RPS), Latency (p95), and HTTP Status Codes.
+2. Spin up a local Kubernetes cluster using **`kind`** with one control-plane and two worker nodes.
+3. Deploy the FastAPI application with Kubernetes `Deployment` and `Service` manifests.
+4. Install **Prometheus** and **Grafana** with **Helm** charts.
+5. Configure Prometheus to scrape `/metrics` from the FastAPI app.
+6. Create Grafana dashboards that visualize pod-level FastAPI metrics.
 
 ## 🏛️ Architecture & Flow
 
-<img width="472" height="263" alt="image" src="https://github.com/user-attachments/assets/b9ed70f8-41be-4f30-90ca-cb94658acbd9" />
+The app exposes metrics at `/metrics` and Prometheus scrapes the FastAPI service using Kubernetes DNS. Grafana connects to Prometheus and renders request rate, latency, and status code panels.
 
 ## 🛠️ Instructions to Execute the Project
 
@@ -22,18 +22,98 @@ This project demonstrates how to:
 # create a cluster with kind
 kind create cluster --config kind-config.yaml --name dev-cluster
 
-# build the docker image for the python fast api 
+# build the docker image for the FastAPI app
 docker build -t fastapi-app:latest ./app
 
-# load the docker image to kind
+# load the docker image into kind
 kind load docker-image fastapi-app:latest --name dev-cluster
 
-# Deploy core namespace and FastAPI application
+# deploy the FastAPI application
 kubectl apply -f k8s-deployment/
-
-# Deploy Prometheus and Grafana monitoring stack
-kubectl apply -f monitoring/
-
-# view all the currently running pods
-kubectl get pods -n monitoring-demo -w
 ```
+
+### Install Prometheus with Helm
+
+```bash
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo add grafana https://grafana.github.io/helm-charts
+helm repo update
+
+cat > prometheus-values.yaml <<'EOF'
+server:
+  service:
+    type: NodePort
+    nodePort: 30090
+  extraArgs: []
+serverFiles:
+  prometheus.yml:
+    global:
+      scrape_interval: 15s
+    rule_files: []
+    scrape_configs:
+      - job_name: fastapi
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - fastapi-service.monitoring-demo.svc.cluster.local:8000
+EOF
+
+helm install prometheus prometheus-community/prometheus -n monitoring-demo --create-namespace -f prometheus-values.yaml
+```
+
+### Install Grafana with Helm
+
+```bash
+cat > grafana-values.yaml <<'EOF'
+service:
+  type: NodePort
+  nodePort: 30000
+adminPassword: admin
+persistence:
+  enabled: false
+EOF
+
+helm install grafana grafana/grafana -n monitoring-demo -f grafana-values.yaml
+```
+
+### Validate deployment
+
+```bash
+kubectl get pods -n monitoring-demo
+kubectl get svc -n monitoring-demo
+```
+
+### Access services
+
+- FastAPI: `http://localhost:8000`
+- Prometheus: `http://localhost:9090`
+- Grafana: `http://localhost:3000`
+
+> Note: `kind-config.yaml` maps host ports to the control-plane. If you use a different port mapping, adjust the Helm NodePort values or use `kubectl port-forward`.
+
+## 📊 Configure pod metrics in Grafana
+
+1. Open Grafana at `http://localhost:3000` and sign in with `admin` / `admin`.
+2. In Grafana, add Prometheus as a datasource if it is not already configured:
+   - Name: `Prometheus`
+   - Type: `Prometheus`
+   - URL: `http://prometheus-service.monitoring-demo.svc.cluster.local:9090`
+   - Access: `Proxy`
+3. Create a new dashboard and add panels with these example queries:
+   - Requests per second by pod:
+     ```promql
+     sum(rate(http_requests_total[1m])) by (pod)
+     ```
+   - 95th percentile latency by pod:
+     ```promql
+     histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[1m])) by (le, pod))
+     ```
+   - HTTP status code rate by pod:
+     ```promql
+     sum(rate(http_requests_total[1m])) by (status, pod)
+     ```
+4. If pod labels are not present in the application metrics, use a service-level query instead:
+   ```promql
+   sum(rate(http_requests_total[1m]))
+   ```
+5. Save the dashboard and refresh every 5s for live pod metrics.

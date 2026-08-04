@@ -9,3 +9,4 @@ nodes:
         hostPort: 9090 # Prometheus
       - containerPort: 30000
         hostPort: 3000 # Grafana
+  - role: worker
