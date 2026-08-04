@@ -94,26 +94,22 @@ kubectl get svc -n monitoring-demo
 ## 📊 Configure pod metrics in Grafana
 
 1. Open Grafana at `http://localhost:3000` and sign in with `admin` / `admin`.
-2. In Grafana, add Prometheus as a datasource if it is not already configured:
+2. Add Prometheus as a datasource if it is not already configured:
    - Name: `Prometheus`
    - Type: `Prometheus`
-   - URL: `http://prometheus-service.monitoring-demo.svc.cluster.local:9090`
+   - URL: `http://prometheus-server.monitoring-demo.svc.cluster.local`
    - Access: `Proxy`
-3. Create a new dashboard and add panels with these example queries:
-   - Requests per second by pod:
-     ```promql
-     sum(rate(http_requests_total[1m])) by (pod)
-     ```
-   - 95th percentile latency by pod:
-     ```promql
-     histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[1m])) by (le, pod))
-     ```
-   - HTTP status code rate by pod:
-     ```promql
-     sum(rate(http_requests_total[1m])) by (status, pod)
-     ```
-4. If pod labels are not present in the application metrics, use a service-level query instead:
-   ```promql
-   sum(rate(http_requests_total[1m]))
+3. Import the existing Kubernetes Pods dashboard:
+   - Go to `Dashboards` -> `New` -> `Import`.
+   - Enter dashboard ID `6417`.
+   - Select the `Prometheus` datasource.
+   - Click `Import`.
+4. Open the imported dashboard and filter to the `monitoring-demo` namespace to view FastAPI pod metrics.
+5. Generate traffic to the FastAPI app so the dashboard has fresh samples:
+   ```bash
+   curl http://localhost:8000/
+   curl http://localhost:8000/metrics
    ```
-5. Save the dashboard and refresh every 5s for live pod metrics.
+6. Set the dashboard refresh interval to `5s` or `10s` for live pod metrics.
+
+> If dashboard `6417` shows `No data`, verify that Prometheus is scraping Kubernetes pod/container metrics such as `container_cpu_usage_seconds_total`, `container_memory_working_set_bytes`, and kube-state-metrics series. The FastAPI `/metrics` scrape alone exposes application metrics, but imported Kubernetes pod dashboards also need cluster-level metrics.
